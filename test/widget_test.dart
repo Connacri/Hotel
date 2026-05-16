@@ -20,6 +20,10 @@ void main() {
   });
 
   testWidgets('App smoke test - verify navigation rail items', (WidgetTester tester) async {
+    // Set a larger surface size to avoid overflow in tests
+    tester.view.physicalSize = const Size(1920, 1080);
+    tester.view.devicePixelRatio = 1.0;
+
     final roomRepo = RoomRepository(db);
     final guestRepo = GuestRepository(db);
     final cardRepo = CardRepository(db);
@@ -40,6 +44,9 @@ void main() {
         ),
       ),
     );
+
+    // Wait for the initial load and animations to complete
+    await tester.pumpAndSettle();
 
     // Vérifie que le titre principal est présent
     expect(find.text('Plan des chambres'), findsOneWidget);
