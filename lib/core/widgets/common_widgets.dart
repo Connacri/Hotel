@@ -196,22 +196,38 @@ class PageHeader extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title,
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                title,
                 style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF111827))),
-            if (subtitle != null)
-              Text(subtitle!,
+                    color: Color(0xFF111827)),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              if (subtitle != null)
+                Text(
+                  subtitle!,
                   style: const TextStyle(
-                      fontSize: 12, color: Color(0xFF6B7280))),
-          ],
+                      fontSize: 12, color: Color(0xFF6B7280)),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+            ],
+          ),
         ),
-        const Spacer(),
-        ...?actions,
+        if (actions != null && actions!.isNotEmpty) ...[
+          const SizedBox(width: 16),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: actions!,
+          ),
+        ],
       ],
     );
   }

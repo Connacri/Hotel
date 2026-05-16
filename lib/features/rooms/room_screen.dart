@@ -312,8 +312,10 @@ class _FilterChips extends StatelessWidget {
       ('Guest', 'Occupées'),
       ('Vacant', 'Libres'),
     ];
-    return Row(
-      children: filters.map((f) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: filters.map((f) {
         final selected = current == f.$1;
         return Padding(
           padding: const EdgeInsets.only(right: 6),
@@ -335,6 +337,7 @@ class _FilterChips extends StatelessWidget {
           ),
         );
       }).toList(),
+      ),
     );
   }
 }
