@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../core/models/models.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/common_widgets.dart';
 
 class GuestScreen extends StatefulWidget {
   const GuestScreen({super.key});

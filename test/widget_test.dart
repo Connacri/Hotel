@@ -1,7 +1,8 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hotel/main.dart';
 import 'package:hotel/core/providers/providers.dart';
 import 'package:hotel/core/repositories/repositories.dart';
+import 'package:hotel/features/app_shell.dart';
 import 'package:provider/provider.dart';
 import 'package:sqlite3/sqlite3.dart';
 
@@ -34,7 +35,9 @@ void main() {
           ChangeNotifierProvider(create: (_) => OperatorProvider(opRepo)),
           ChangeNotifierProvider(create: (_) => RecordProvider(recRepo)),
         ],
-        child: const CardLockApp(),
+        child: const MaterialApp(
+          home: AppShell(),
+        ),
       ),
     );
 
