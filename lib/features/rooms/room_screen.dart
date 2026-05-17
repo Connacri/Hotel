@@ -34,6 +34,23 @@ class _RoomScreenState extends State<RoomScreen> {
   Widget build(BuildContext context) {
     return Consumer<RoomProvider>(
       builder: (context, provider, _) {
+        if (provider.error != null) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error_outline, color: Colors.red, size: 48),
+                const SizedBox(height: 16),
+                Text('Erreur: ${provider.error}'),
+                ElevatedButton(
+                  onPressed: () => provider.load(),
+                  child: const Text('Réessayer'),
+                ),
+              ],
+            ),
+          );
+        }
+
         final stats = provider.stats;
 
         return Padding(
@@ -153,7 +170,7 @@ class _RoomScreenState extends State<RoomScreen> {
   }
 }
 
-// ─── Grille regroupée par étage ──────────────────────────────────────────────
+// ─── Grille regroupée par étage (Lazy) ───────────────────────────────────────
 class _RoomsByFloor extends StatelessWidget {
   final Map<int, List<RoomModel>> rooms;
   const _RoomsByFloor({required this.rooms});
@@ -161,49 +178,80 @@ class _RoomsByFloor extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final floors = rooms.keys.toList()..sort();
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: floors.map((flr) {
-          final flrRooms = rooms[flr]!;
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Label étage
-              Padding(
-                padding: const EdgeInsets.only(bottom: 10, top: 4),
-                child: Row(
-                  children: [
-                    const Icon(Icons.stairs_outlined,
-                        size: 14, color: Color(0xFF6B7280)),
-                    const SizedBox(width: 6),
-                    Text(
-                      'Étage $flr',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF6B7280),
-                        letterSpacing: 0.3,
-                      ),
+    
+    return ListView.builder(
+      itemCount: floors.length,
+      padding: const EdgeInsets.only(bottom: 40),
+      itemBuilder: (context, index) {
+        final flr = floors[index];
+        final flrRooms = rooms[flr]!;
+        
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Label étage
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12, top: 20),
+              child: Row(
+                children: [
+                  const Icon(Icons.stairs_outlined,
+                      size: 14, color: Color(0xFF6B7280)),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Étage $flr',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF6B7280),
+                      letterSpacing: 0.5,
                     ),
-                    const SizedBox(width: 10),
-                    const Expanded(
-                      child: Divider(height: 1),
-                    ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(child: Divider(height: 1)),
+                  const SizedBox(width: 12),
+                  Text(
+                    '${flrRooms.length} chambres',
+                    style: const TextStyle(fontSize: 10, color: Color(0xFF9CA3AF)),
+                  ),
+                ],
               ),
-              // Grille chambres
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: flrRooms.map((r) => _RoomCard(room: r)).toList(),
-              ),
-              const SizedBox(height: 20),
-            ],
-          );
-        }).toList(),
-      ),
+            ),
+            // Grille chambres optimisée (Lazy & Fixe)
+            LayoutBuilder(
+              builder: (context, constraints) {
+                // Largeur idéale d'une carte : 190px
+                const idealWidth = 190.0;
+                final spacing = 12.0;
+                
+                // Calculer le nombre de colonnes pour remplir l'espace
+                int crossAxisCount = (constraints.maxWidth / (idealWidth + spacing)).floor();
+                crossAxisCount = crossAxisCount.clamp(1, 10);
+                
+                return GridView.builder(
+                  key: PageStorageKey('floor-$flr'),
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: crossAxisCount,
+                    crossAxisSpacing: spacing,
+                    mainAxisSpacing: spacing,
+                    mainAxisExtent: 155, // Hauteur strictement identique pour toutes les cartes
+                  ),
+                  itemCount: flrRooms.length,
+                  itemBuilder: (context, rIndex) {
+                    final room = flrRooms[rIndex];
+                    return _RoomCard(
+                      key: ValueKey('room-${room.romId}-${room.roomNo}'),
+                      room: room,
+                    );
+                  },
+                );
+              },
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -211,75 +259,124 @@ class _RoomsByFloor extends StatelessWidget {
 // ─── Carte chambre individuelle ───────────────────────────────────────────────
 class _RoomCard extends StatelessWidget {
   final RoomModel room;
-  const _RoomCard({required this.room});
+  const _RoomCard({super.key, required this.room});
 
   @override
   Widget build(BuildContext context) {
     final occ = room.isOccupied;
     final accentColor = occ ? AppTheme.colorOccupied : AppTheme.colorVacant;
+    final roomKey = '${room.bldNo}-${room.roomNo}';
+    final guests = context.watch<GuestProvider>().getGuestsForRoom(roomKey);
+    final guest = guests.isNotEmpty ? guests.first : null;
+    final roomLabel = room.roomNo.isEmpty ? 'ID ${room.romId}' : room.roomNo;
 
-    return InkWell(
-      borderRadius: BorderRadius.circular(10),
-      onTap: () => _openDetail(context),
-      child: Container(
-        width: 150,
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(10),
-          border: Border(
-            left: BorderSide(color: accentColor, width: 3),
-            top: const BorderSide(color: Color(0xFFE5E7EB), width: 0.5),
-            right: const BorderSide(color: Color(0xFFE5E7EB), width: 0.5),
-            bottom: const BorderSide(color: Color(0xFFE5E7EB), width: 0.5),
+    return Card(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: () => _openDetail(context),
+        child: Container(
+          // On retire la largeur fixe car le GridView la gère
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border(
+              left: BorderSide(color: accentColor, width: 4),
+            ),
           ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  room.roomNo,
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF111827),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      roomLabel,
+                      style: const TextStyle(
+                        fontSize: 16, // Légèrement réduit pour éviter l'overflow
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF111827),
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                ),
-                Icon(
-                  occ ? Icons.person : Icons.hotel_outlined,
-                  size: 18,
-                  color: accentColor,
-                ),
-              ],
-            ),
-            const SizedBox(height: 2),
-            Text(
-              room.sType ?? 'Standard',
-              style: const TextStyle(fontSize: 11, color: Color(0xFF6B7280)),
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 8),
-            occ ? StatusBadge.occupied() : StatusBadge.vacant(),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                const Icon(Icons.credit_card, size: 12, color: Color(0xFF9CA3AF)),
-                const SizedBox(width: 4),
-                Text(
-                  '${room.cardCount}/${room.maxCards}',
-                  style: const TextStyle(fontSize: 11, color: Color(0xFF6B7280)),
-                ),
-                const Spacer(),
-                Text(
-                  '${room.price.toInt()} DZD',
-                  style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
-                ),
-              ],
-            ),
-          ],
+                  Icon(
+                    occ ? Icons.person : Icons.hotel_outlined,
+                    size: 14,
+                    color: accentColor,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(
+                (room.sType?.isEmpty ?? true) ? 'Standard' : room.sType!,
+                style: const TextStyle(fontSize: 10, color: Color(0xFF6B7280)),
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 10),
+              occ ? StatusBadge.occupied() : StatusBadge.vacant(),
+              
+              const Spacer(),
+
+              // Zone d'information (hauteur fixe pour l'alignement)
+              SizedBox(
+                height: 32,
+                child: occ 
+                  ? (guest != null 
+                      ? Row(
+                          children: [
+                            const Icon(Icons.account_circle_outlined, size: 12, color: Color(0xFF4B5563)),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                guest.name.isEmpty ? 'Client inconnu' : guest.name,
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF1F2937),
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        )
+                      : const Row(
+                          children: [
+                            Icon(Icons.warning_amber_rounded, size: 12, color: Colors.orange),
+                            SizedBox(width: 4),
+                            Text(
+                              'Non lié',
+                              style: TextStyle(fontSize: 10, color: Colors.orange, fontStyle: FontStyle.italic),
+                            ),
+                          ],
+                        )
+                    )
+                  : const SizedBox.shrink(),
+              ),
+
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  const Icon(Icons.credit_card, size: 11, color: Color(0xFF9CA3AF)),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${room.cardCount}/${room.maxCards}',
+                    style: const TextStyle(fontSize: 10, color: Color(0xFF6B7280)),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '${room.price.toInt()} DZD',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF374151),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

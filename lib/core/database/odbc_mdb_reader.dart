@@ -131,6 +131,19 @@ class OdbcMdbReader {
     }
   }
 
+  /// Exécute une commande SQL sans retour (INSERT, UPDATE, DELETE).
+  static Future<void> execute(String mdbPath, String sql) async {
+    return _withConnection(mdbPath, (stmtHandle) {
+      final sqlPtr = sql.toNativeUtf16();
+      try {
+        final rc = _sqlExecDirectW(stmtHandle, sqlPtr, SQL_NTS);
+        _check(rc, 'SQLExecDirect: $sql');
+      } finally {
+        calloc.free(sqlPtr);
+      }
+    });
+  }
+
   // ─── Internals ────────────────────────────────────────────────
 
   static T _withConnection<T>(
@@ -190,12 +203,12 @@ class OdbcMdbReader {
 
   static bool _connect(int dbcHandle, String mdbPath) {
     final candidates = [
-      'Driver={Microsoft Access Driver (*.mdb, *.accdb)};Dbq=$mdbPath;Uid=Admin;Pwd=;ReadOnly=1;',
-      'Driver={Microsoft Access Driver (*.mdb)};Dbq=$mdbPath;Uid=Admin;Pwd=;ReadOnly=1;',
-      'Driver={Microsoft Access Driver (*.mdb, *.accdb)};Dbq=$mdbPath;Uid=Admin;Pwd=pradlock;ReadOnly=1;',
-      'Driver={Microsoft Access Driver (*.mdb)};Dbq=$mdbPath;Uid=Admin;Pwd=pradlock;ReadOnly=1;',
+      'Driver={Microsoft Access Driver (*.mdb, *.accdb)};Dbq=$mdbPath;Uid=Admin;Pwd=;',
+      'Driver={Microsoft Access Driver (*.mdb)};Dbq=$mdbPath;Uid=Admin;Pwd=;',
+      'Driver={Microsoft Access Driver (*.mdb, *.accdb)};Dbq=$mdbPath;Uid=Admin;Pwd=pradlock;',
+      'Driver={Microsoft Access Driver (*.mdb)};Dbq=$mdbPath;Uid=Admin;Pwd=pradlock;',
       // Version localized / common fallbacks
-      'Driver={Driver do Microsoft Access (*.mdb)};Dbq=$mdbPath;Uid=Admin;Pwd=;ReadOnly=1;',
+      'Driver={Driver do Microsoft Access (*.mdb)};Dbq=$mdbPath;Uid=Admin;Pwd=;',
     ];
 
     final outBuf    = calloc<Uint16>(1024);

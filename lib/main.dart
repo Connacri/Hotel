@@ -18,6 +18,7 @@ Future<void> main() async {
 
   // 2. Détection MDB pour migration potentielle
   final mdbPath = _findMdb();
+  localDb.mdbPath = mdbPath;
   final needsMigration = !localDb.isMigrated && mdbPath != null;
 
   // 3. Repositories

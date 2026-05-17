@@ -1,7 +1,9 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../database/local_database.dart';
 import '../database/mdb_migrator.dart';
+import 'providers.dart';
 
 class MigrationProvider extends ChangeNotifier {
   static const _logPrefix = '[MDB Import]';
@@ -33,6 +35,7 @@ class MigrationProvider extends ChangeNotifier {
       notifyListeners();
 
       final dbInstance = await LocalDatabase.getInstance();
+      dbInstance.mdbPath = path; // Persister le nouveau chemin
       final migrator = MdbMigrator(db: dbInstance.db, mdbPath: path);
 
       await migrator.migrate(onProgress: (table) {
@@ -44,6 +47,16 @@ class MigrationProvider extends ChangeNotifier {
       _status = "Migration terminée avec succès !";
       _isMigrating = false;
       notifyListeners();
+
+      // Rafraîchir tous les providers après la migration
+      if (context.mounted) {
+        context.read<RoomProvider>().load();
+        context.read<GuestProvider>().load();
+        context.read<CardProvider>().load();
+        context.read<OperatorProvider>().load();
+        context.read<RecordProvider>().load();
+      }
+
       return true;
     } catch (e, st) {
       _log('Manual import failed: $e');

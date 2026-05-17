@@ -6,6 +6,7 @@ import 'package:sqlite3/sqlite3.dart';
 class LocalDatabase {
   static LocalDatabase? _instance;
   late final Database _db;
+  String? _mdbPath;
 
   LocalDatabase._();
 
@@ -139,6 +140,27 @@ class LocalDatabase {
   }
 
   Database get db => _db;
+
+  String? get mdbPath {
+    if (_mdbPath != null) return _mdbPath;
+    final rows = _db.select(
+      "SELECT value FROM migration_status WHERE key = 'mdb_path'",
+    );
+    if (rows.isNotEmpty) {
+      _mdbPath = rows.first['value'] as String?;
+    }
+    return _mdbPath;
+  }
+
+  set mdbPath(String? path) {
+    _mdbPath = path;
+    if (path != null) {
+      _db.execute(
+        "INSERT OR REPLACE INTO migration_status (key, value) VALUES ('mdb_path', ?)",
+        [path],
+      );
+    }
+  }
 
   bool get isMigrated {
     final rows = _db.select(

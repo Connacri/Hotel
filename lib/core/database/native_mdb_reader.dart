@@ -66,6 +66,13 @@ foreach ($connectionString in $connectionStrings) {
       exit 0
     }
 
+    if ($mode -eq 'execute') {
+      $command = $connection.CreateCommand()
+      $command.CommandText = $table # En mode execute, on passe le SQL dans la variable table
+      $command.ExecuteNonQuery()
+      exit 0
+    }
+
     $command = $connection.CreateCommand()
     $command.CommandText = "SELECT * FROM [$table]"
     $reader = $command.ExecuteReader()
@@ -231,6 +238,27 @@ exit 1
         .toList(growable: false);
     _log('Table $table: native channel returned ${mappedRows.length} rows.');
     return mappedRows;
+  }
+
+  static Future<void> execute(String mdbPath, String sql) async {
+    if (!isSupported) return;
+
+    // 1. Essayer ODBC FFI
+    if (OdbcMdbReader.isAvailable) {
+      try {
+        await OdbcMdbReader.execute(mdbPath, sql);
+        return;
+      } catch (e) {
+        _log('ODBC FFI execute failed: $e. Falling back to PowerShell.');
+      }
+    }
+
+    // 2. Fallback PowerShell
+    await _runPowerShell(
+      mode: 'execute',
+      mdbPath: mdbPath,
+      table: sql, // On détourne 'table' pour passer le SQL
+    );
   }
 
   static Future<List<List<String?>>> _runPowerShell({

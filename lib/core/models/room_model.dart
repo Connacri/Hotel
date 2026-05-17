@@ -39,31 +39,38 @@ class RoomModel {
     this.reservCkIn,
   });
 
-  bool get isOccupied => status == 'Guest';
-  bool get isVacant => status == 'Vacant';
-  String get displayName => 'Chambre $roomNo';
+  bool get isOccupied => status.trim().toLowerCase() == 'guest';
+  bool get isVacant => status.trim().toLowerCase() == 'vacant';
+  String get displayName => 'Chambre ${roomNo.trim()}';
   String get floorLabel => 'Étage $flrNo';
 
-  factory RoomModel.fromRow(Map<String, Object?> row) => RoomModel(
-        id: row['id'] as int?,
-        bldNo: (row['bld_no'] as int?) ?? 1,
-        flrNo: (row['flr_no'] as int?) ?? 1,
-        romId: (row['rom_id'] as int?) ?? 0,
-        romId2: (row['rom_id2'] as int?) ?? 99,
-        roomNo: (row['room_no'] as String?) ?? '',
-        sType: row['s_type'] as String?,
-        status: (row['status'] as String?) ?? 'Vacant',
-        price: (row['price'] as num?)?.toDouble() ?? 0,
-        dai: (row['dai'] as int?) ?? 0,
-        cardCount: (row['card_count'] as int?) ?? 0,
-        maxCards: (row['max_cards'] as int?) ?? 10,
-        publicDoor: (row['public_door'] as int?) ?? 0,
-        beiZhu: row['bei_zhu'] as String?,
-        firstCkOut: row['first_ck_out'] as String?,
-        hourRateStartup: (row['hour_rate_startup'] as num?)?.toDouble() ?? 0,
-        hourRatePrice: (row['hour_rate_price'] as num?)?.toDouble() ?? 0,
-        reservCkIn: row['reserv_ck_in'] as String?,
-      );
+  factory RoomModel.fromRow(Map<String, Object?> row) {
+    String sanitize(dynamic value) {
+      if (value == null) return '';
+      return value.toString().replaceAll('\u0000', '').trim();
+    }
+
+    return RoomModel(
+      id: row['id'] as int?,
+      bldNo: (row['bld_no'] as int?) ?? 1,
+      flrNo: (row['flr_no'] as int?) ?? 1,
+      romId: (row['rom_id'] as int?) ?? 0,
+      romId2: (row['rom_id2'] as int?) ?? 99,
+      roomNo: sanitize(row['room_no']),
+      sType: sanitize(row['s_type']),
+      status: sanitize(row['status'] ?? 'Vacant'),
+      price: (row['price'] as num?)?.toDouble() ?? 0,
+      dai: (row['dai'] as int?) ?? 0,
+      cardCount: (row['card_count'] as int?) ?? 0,
+      maxCards: (row['max_cards'] as int?) ?? 10,
+      publicDoor: (row['public_door'] as int?) ?? 0,
+      beiZhu: sanitize(row['bei_zhu']),
+      firstCkOut: sanitize(row['first_ck_out']),
+      hourRateStartup: (row['hour_rate_startup'] as num?)?.toDouble() ?? 0,
+      hourRatePrice: (row['hour_rate_price'] as num?)?.toDouble() ?? 0,
+      reservCkIn: sanitize(row['reserv_ck_in']),
+    );
+  }
 
   Map<String, Object?> toMap() => {
         if (id != null) 'id': id,

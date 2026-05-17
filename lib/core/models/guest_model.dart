@@ -30,7 +30,7 @@ class GuestModel {
   });
 
   bool get isWalkIn => flag == 'WalkIn';
-  String get roomLabel => bldRoomNo.replaceFirst('1-', '');
+  String get roomLabel => bldRoomNo.split('-').last.trim();
 
   GuestModel copyWith({
     int? id,
@@ -64,21 +64,28 @@ class GuestModel {
     );
   }
 
-  factory GuestModel.fromRow(Map<String, Object?> row) => GuestModel(
-        id: row['id'] as int?,
-        bldRoomNo: (row['bld_room_no'] as String?) ?? '',
-        name: (row['name'] as String?) ?? '',
-        sex: row['sex'] as String?,
-        cType: row['c_type'] as String?,
-        cNo: row['c_no'] as String?,
-        comeTime: row['come_time'] as String?,
-        goTime: row['go_time'] as String?,
-        cardId: row['card_id'] as String?,
-        flag: row['flag'] as String?,
-        beiZhu: row['bei_zhu'] as String?,
-        price: (row['price'] as num?)?.toDouble() ?? 0,
-        yaJin: (row['ya_jin'] as num?)?.toDouble() ?? 0,
-      );
+  factory GuestModel.fromRow(Map<String, Object?> row) {
+    String sanitize(dynamic value) {
+      if (value == null) return '';
+      return value.toString().replaceAll('\u0000', '').trim();
+    }
+
+    return GuestModel(
+      id: row['id'] as int?,
+      bldRoomNo: sanitize(row['bld_room_no']),
+      name: sanitize(row['name']),
+      sex: sanitize(row['sex']),
+      cType: sanitize(row['c_type']),
+      cNo: sanitize(row['c_no']),
+      comeTime: sanitize(row['come_time']),
+      goTime: sanitize(row['go_time']),
+      cardId: sanitize(row['card_id']),
+      flag: sanitize(row['flag']),
+      beiZhu: sanitize(row['bei_zhu']),
+      price: (row['price'] as num?)?.toDouble() ?? 0,
+      yaJin: (row['ya_jin'] as num?)?.toDouble() ?? 0,
+    );
+  }
 
   Map<String, Object?> toMap() => {
         if (id != null) 'id': id,

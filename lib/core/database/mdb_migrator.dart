@@ -83,6 +83,25 @@ class MdbMigrator {
   Future<void> migrate({void Function(String table)? onProgress}) async {
     await checkRequirements();
     _log('Starting MDB migration.');
+
+    // ─── Nettoyage des données existantes ───
+    _log('Clearing existing data to prevent duplicates.');
+    _db.execute('BEGIN');
+    try {
+      _db.execute('DELETE FROM building_info');
+      _db.execute('DELETE FROM room_info');
+      _db.execute('DELETE FROM guest_info');
+      _db.execute('DELETE FROM card_info');
+      _db.execute('DELETE FROM operator_info');
+      _db.execute('DELETE FROM record_open');
+      _db.execute("DELETE FROM migration_status WHERE key = 'mdb_migrated'");
+      _db.execute('COMMIT');
+    } catch (e) {
+      _db.execute('ROLLBACK');
+      _log('Failed to clear existing tables: $e');
+      throw Exception('Impossible de vider la base de données actuelle avant l\'importation.');
+    }
+
     final tables = [
       _MdbTable(
         name: 'BuildingInfo',
@@ -278,7 +297,7 @@ class MdbMigrator {
   }
 
   String? _normalize(String value) {
-    final normalized = value.trim();
+    final normalized = value.replaceAll('\u0000', '').trim();
     return normalized.isEmpty ? null : normalized;
   }
 
