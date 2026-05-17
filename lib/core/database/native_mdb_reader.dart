@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import 'odbc_mdb_reader.dart';
+
 class NativeMdbReader {
   static const _logPrefix = '[MDB Import]';
   static const List<String> _candidatePasswords = ['', 'pradlock'];
@@ -46,6 +48,9 @@ foreach ($password in $passwords) {
   [void]$connectionStrings.Add(
     "Driver={Microsoft Access Driver (*.mdb)};Dbq=$path;Uid=Admin;Pwd=$password;ReadOnly=1;"
   )
+  [void]$connectionStrings.Add(
+    "Driver={Driver do Microsoft Access (*.mdb)};Dbq=$path;Uid=Admin;Pwd=$password;ReadOnly=1;"
+  )
 }
 
 $lastErrorText = $null
@@ -64,23 +69,24 @@ foreach ($connectionString in $connectionStrings) {
     $command = $connection.CreateCommand()
     $command.CommandText = "SELECT * FROM [$table]"
     $reader = $command.ExecuteReader()
-    $rows = New-Object System.Collections.Generic.List[object]
+    $rows = New-Object System.Collections.Generic.List[string]
 
     while ($reader.Read()) {
-      $row = [object[]]::new($reader.FieldCount)
+      $rowValues = New-Object System.Collections.Generic.List[string]
       for ($i = 0; $i -lt $reader.FieldCount; $i++) {
         $val = $reader.GetValue($i)
         if ($val -eq [System.DBNull]::Value -or $null -eq $val) {
-          $row[$i] = $null
+          [void]$rowValues.Add("null")
         } else {
-          $row[$i] = [string]$val
+          $escaped = ([string]$val).Replace('\', '\\').Replace('"', '\"').Replace("`n", '\n').Replace("`r", '\r')
+          [void]$rowValues.Add("`"$escaped`"")
         }
       }
-      [void]$rows.Add($row)
+      [void]$rows.Add("[" + ($rowValues -join ",") + "]")
     }
 
     $reader.Close()
-    @{ rows = @($rows) } | ConvertTo-Json -Compress -Depth 5
+    Write-Output ("{`"rows`":[" + ($rows -join ",") + "]}")
     exit 0
   } catch {
     $lastErrorText = $_.Exception.ToString()
@@ -111,12 +117,25 @@ exit 1
       );
     }
 
+    // 1. Essayer ODBC FFI (Recommandé)
+    if (OdbcMdbReader.isAvailable) {
+      _log('Checking Windows ODBC FFI support for "$mdbPath".');
+      try {
+        await OdbcMdbReader.listTables(mdbPath);
+        _log('ODBC FFI support is available.');
+        return;
+      } catch (e) {
+        _log('ODBC FFI check failed: $e. Falling back to native channel.');
+      }
+    }
+
+    // 2. Fallback au canal natif (MethodChannel)
     try {
-      _log('Checking Windows native MDB access for "$mdbPath".');
+      _log('Checking Windows native MDB channel access for "$mdbPath".');
       await _channel.invokeMethod<void>('checkAccessSupport', {
         'path': mdbPath,
       });
-      _log('Native x64 MDB access is available.');
+      _log('Native x64 MDB channel access is available.');
     } on MissingPluginException catch (nativeError) {
       _log(
         'Native MDB channel is unavailable, switching to PowerShell fallback. '
@@ -150,6 +169,18 @@ exit 1
       throw UnsupportedError(
         'La lecture native de fichiers MDB est uniquement disponible sous Windows.',
       );
+    }
+
+    // 1. Essayer ODBC FFI (Recommandé)
+    if (OdbcMdbReader.isAvailable) {
+      _log('Reading table $table via ODBC FFI.');
+      try {
+        final maps = await OdbcMdbReader.readTable(mdbPath, table);
+        _log('Table $table: ODBC FFI returned ${maps.length} rows.');
+        return maps.map((m) => m.values.toList()).toList();
+      } catch (e) {
+        _log('ODBC FFI read failed for $table: $e. Falling back to native channel.');
+      }
     }
 
     List<Object?>? rows;
@@ -312,24 +343,25 @@ exit 1
   static String get _powerShellPath {
     final windowsDir = Platform.environment['WINDIR'] ?? r'C:\Windows';
 
-    // Priority 1: PowerShell 64-bit (System32 on x64 Windows)
+    // Priority 1: PowerShell 32-bit (SysWOW64) - ESSENTIAL for 32-bit ODBC drivers
+    // If the drivers are 32-bit, we MUST run PowerShell 32-bit to see them.
+    final wow64Path =
+        '$windowsDir\\SysWOW64\\WindowsPowerShell\\v1.0\\powershell.exe';
+    if (File(wow64Path).existsSync()) {
+      return wow64Path;
+    }
+
+    // Priority 2: PowerShell 64-bit (System32 on x64 Windows)
     final sys64Path =
         '$windowsDir\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
     if (File(sys64Path).existsSync()) {
       return sys64Path;
     }
 
-    // Priority 2: PowerShell Core 64-bit
+    // Priority 3: PowerShell Core 64-bit
     final pwsh64 = r'C:\Program Files\PowerShell\7\pwsh.exe';
     if (File(pwsh64).existsSync()) {
       return pwsh64;
-    }
-
-    // Fallback: PowerShell 32-bit (SysWOW64)
-    final wow64Path =
-        '$windowsDir\\SysWOW64\\WindowsPowerShell\\v1.0\\powershell.exe';
-    if (File(wow64Path).existsSync()) {
-      return wow64Path;
     }
 
     return 'powershell.exe';

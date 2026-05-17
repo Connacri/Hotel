@@ -22,6 +22,10 @@ dependencies:
   path: ^1.9.0
   path_provider: ^2.1.3
 
+  # FFI and Win32 for ODBC
+  ffi: ^2.1.3
+  win32: ^5.5.4
+
   # Import fichier MDB (Android — file picker)
   file_picker: ^8.1.2
 
