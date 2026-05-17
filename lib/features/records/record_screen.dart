@@ -59,6 +59,7 @@ class _RecordScreenState extends State<RecordScreen> {
                             icon: Icons.history_toggle_off,
                             message: 'Aucun événement')
                         : SectionCard(
+                            flex: true,
                             padding: EdgeInsets.zero,
                             child: SingleChildScrollView(
                               child: SingleChildScrollView(

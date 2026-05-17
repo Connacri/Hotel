@@ -76,6 +76,7 @@ class _GuestScreenState extends State<GuestScreen> {
                             message: 'Aucun séjour trouvé',
                           )
                         : SectionCard(
+                            flex: true,
                             padding: EdgeInsets.zero,
                             child: _GuestTable(guests: guests),
                           ),

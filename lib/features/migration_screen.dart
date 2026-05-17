@@ -74,28 +74,56 @@ class _MigrationScreenState extends State<MigrationScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.storage_rounded, size: 48, color: Color(0xFF1565C0)),
-              const SizedBox(height: 24),
-              const Text(
-                'Migration des données',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Importation depuis CardLock.mdb',
-                style: TextStyle(fontSize: 13, color: Colors.grey[600]),
-              ),
-              const SizedBox(height: 32),
-              if (_error != null) ...[
-                Text(_error!, style: const TextStyle(color: Colors.red)),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () => Navigator.of(context).pushReplacement(
-                    MaterialPageRoute(builder: (_) => const AppShell()),
-                  ),
-                  child: const Text('Ignorer et continuer'),
-                ),
-              ] else ...[
+    const Icon(Icons.storage_rounded, size: 48, color: Color(0xFF1565C0)),
+    const SizedBox(height: 24),
+    const Text(
+      'Migration des données',
+      style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+    ),
+    const SizedBox(height: 8),
+    Text(
+      'Importation depuis CardLock.mdb',
+      style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+    ),
+    const SizedBox(height: 32),
+    if (_error != null) ...[
+      Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.red[50],
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.red[200]!),
+        ),
+        child: Text(
+          _error!,
+          style: TextStyle(color: Colors.red[900], fontSize: 13),
+          textAlign: TextAlign.center,
+        ),
+      ),
+      const SizedBox(height: 24),
+      Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pushReplacement(
+              MaterialPageRoute(builder: (_) => const AppShell()),
+            ),
+            child: const Text('Ignorer'),
+          ),
+          const SizedBox(width: 16),
+          ElevatedButton(
+            onPressed: () {
+              setState(() {
+                _error = null;
+                _progress = 0;
+              });
+              _startMigration();
+            },
+            child: const Text('Réessayer'),
+          ),
+        ],
+      ),
+    ] else ...[
                 LinearProgressIndicator(
                   value: _isDone ? 1.0 : _progress,
                   borderRadius: BorderRadius.circular(4),

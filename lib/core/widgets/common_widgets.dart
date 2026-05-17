@@ -62,6 +62,7 @@ class SectionCard extends StatelessWidget {
   final Widget child;
   final List<Widget>? actions;
   final EdgeInsetsGeometry padding;
+  final bool flex;
 
   const SectionCard({
     super.key,
@@ -69,6 +70,7 @@ class SectionCard extends StatelessWidget {
     required this.child,
     this.actions,
     this.padding = const EdgeInsets.all(16),
+    this.flex = false,
   });
 
   @override
@@ -76,6 +78,7 @@ class SectionCard extends StatelessWidget {
     return Card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: flex ? MainAxisSize.max : MainAxisSize.min,
         children: [
           if (title != null)
             Padding(
@@ -96,7 +99,18 @@ class SectionCard extends StatelessWidget {
               ),
             ),
           if (title != null) const SizedBox(height: 10),
-          Padding(padding: title != null ? EdgeInsets.zero : padding, child: child),
+          if (flex)
+            Expanded(
+              child: Padding(
+                padding: title != null ? EdgeInsets.zero : padding,
+                child: child,
+              ),
+            )
+          else
+            Padding(
+              padding: title != null ? EdgeInsets.zero : padding,
+              child: child,
+            ),
         ],
       ),
     );

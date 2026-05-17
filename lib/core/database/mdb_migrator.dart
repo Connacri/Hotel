@@ -11,17 +11,55 @@ class MdbMigrator {
   /// Chemin vers mdb-export selon la plateforme
   String get _mdbExport {
     if (Platform.isWindows) {
-      // Chercher mdb-export.exe bundlé à côté de l'exécutable
-      final exeDir = p.dirname(Platform.resolvedExecutable);
-      final bundled = p.join(exeDir, 'mdb-export.exe');
-      if (File(bundled).existsSync()) return bundled;
-      // Fallback : PATH système (msys2 installé)
-      return 'mdb-export';
+      final candidates = [
+        // 1. Dossier de l'exécutable
+        p.join(p.dirname(Platform.resolvedExecutable), 'mdb-export.exe'),
+        // 2. Racine du projet (développement)
+        p.join(Directory.current.path, 'mdb-export.exe'),
+        // 3. Dossier bin (standard)
+        p.join(Directory.current.path, 'bin', 'mdb-export.exe'),
+        // 4. Dossier spécifique au projet hotel
+        p.join(Directory.current.path, 'installer', 'mdb-export.exe'),
+      ];
+
+      for (final path in candidates) {
+        if (File(path).existsSync()) {
+          print('DEBUG: Found mdb-export at: $path');
+          return path;
+        }
+      }
+      
+      print('DEBUG: mdb-export.exe NOT FOUND in any expected location.');
+      print('DEBUG: Checked paths: ${candidates.join(', ')}');
+      return 'mdb-export'; // Fallback to PATH
     }
     return 'mdb-export';
   }
 
+  Future<void> checkRequirements() async {
+    try {
+      final result = await Process.run(_mdbExport, ['--version'], runInShell: Platform.isWindows);
+      if (result.exitCode != 0) {
+        throw Exception('mdb-export binaire trouvé mais a retourné une erreur: ${result.stderr}');
+      }
+      print('DEBUG: mdb-export requirements check passed.');
+    } catch (e) {
+      final checkedPaths = [
+        p.join(p.dirname(Platform.resolvedExecutable), 'mdb-export.exe'),
+        p.join(Directory.current.path, 'mdb-export.exe'),
+        p.join(Directory.current.path, 'bin', 'mdb-export.exe'),
+        p.join(Directory.current.path, 'installer', 'mdb-export.exe'),
+      ].map((path) => ' - $path').join('\n');
+
+      throw Exception(
+        'mdb-export est introuvable. Veuillez installer mdbtools ou placer mdb-export.exe dans le dossier installer/.\n'
+        'Chemins vérifiés :\n$checkedPaths'
+      );
+    }
+  }
+
   Future<void> migrate({void Function(String table)? onProgress}) async {
+    await checkRequirements();
     final tables = [
       _MdbTable(
         name: 'BuildingInfo',
@@ -87,13 +125,18 @@ class MdbMigrator {
 
   Future<void> _migrateTable(_MdbTable table) async {
     final csv = await _export(table.name);
-    if (csv.isEmpty) return;
+    if (csv.isEmpty) {
+      print('DEBUG: CSV empty for table ${table.name}');
+      return;
+    }
 
     final lines = csv.split('\n');
+    print('DEBUG: Table ${table.name} has ${lines.length} lines');
     if (lines.length < 2) return;
 
     final stmt = _db.prepare(table.sql);
     _db.execute('BEGIN');
+    var successCount = 0;
     try {
       for (var i = 1; i < lines.length; i++) {
         final line = lines[i].trim();
@@ -101,14 +144,20 @@ class MdbMigrator {
         try {
           final cols = _parseCsv(line);
           if (cols.isEmpty) continue;
-          stmt.execute(table.mapper(cols));
-        } catch (_) {
+          
+          final mappedData = table.mapper(cols);
+          stmt.execute(mappedData);
+          successCount++;
+        } catch (e) {
           // Ligne corrompue — on continue
+          // print('DEBUG: Error parsing line $i in ${table.name}: $e');
         }
       }
       _db.execute('COMMIT');
+      print('DEBUG: Committed $successCount rows for ${table.name}');
     } catch (e) {
       _db.execute('ROLLBACK');
+      print('DEBUG: Rollback for ${table.name}: $e');
       rethrow;
     } finally {
       stmt.dispose();
@@ -117,14 +166,22 @@ class MdbMigrator {
 
   Future<String> _export(String table) async {
     try {
-      final result = await Process.run(
-        _mdbExport,
-        [mdbPath, table],
-        runInShell: Platform.isWindows,
-      );
-      if (result.exitCode != 0) return '';
-      return (result.stdout as String).trim();
-    } catch (_) {
+      print('DEBUG: Exporting table $table using $_mdbExport');
+    final result = await Process.run(
+      _mdbExport,
+      [mdbPath, table],
+      runInShell: Platform.isWindows,
+    );
+    if (result.exitCode != 0) {
+      final errorMsg = 'Export failed for $table with exit code ${result.exitCode}\nStderr: ${result.stderr}';
+      print('DEBUG: $errorMsg');
+      throw Exception(errorMsg);
+    }
+    final stdout = result.stdout as String;
+      print('DEBUG: Export success for $table, length: ${stdout.length}');
+      return stdout.trim();
+    } catch (e) {
+      print('DEBUG: Exception during export of $table: $e');
       return '';
     }
   }

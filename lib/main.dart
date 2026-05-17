@@ -36,6 +36,7 @@ Future<void> main() async {
         ChangeNotifierProvider(create: (_) => CardProvider(cardRepo)..load()),
         ChangeNotifierProvider(create: (_) => OperatorProvider(opRepo)..load()),
         ChangeNotifierProvider(create: (_) => RecordProvider(recordRepo)..load()),
+        ChangeNotifierProvider(create: (_) => MigrationProvider()),
       ],
       child: CardLockApp(
         localDb: localDb,

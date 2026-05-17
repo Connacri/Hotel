@@ -79,6 +79,7 @@ class _CardScreenState extends State<CardScreen> {
                             icon: Icons.credit_card_off,
                             message: 'Aucune carte')
                         : SectionCard(
+                            flex: true,
                             padding: EdgeInsets.zero,
                             child: SingleChildScrollView(
                               child: SingleChildScrollView(

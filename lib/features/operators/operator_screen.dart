@@ -36,6 +36,12 @@ class _OperatorScreenState extends State<OperatorScreen> {
                 title: 'Opérateurs & permissions',
                 subtitle: '${ops.length} comptes — OperatorInfo',
                 actions: [
+                  OutlinedButton.icon(
+                    onPressed: () => _handleImport(context),
+                    icon: const Icon(Icons.download, size: 16),
+                    label: const Text('Importer MDB'),
+                  ),
+                  const SizedBox(width: 8),
                   ElevatedButton.icon(
                     onPressed: () => _showAddOperator(context),
                     icon: const Icon(Icons.person_add_outlined, size: 16),
@@ -45,6 +51,24 @@ class _OperatorScreenState extends State<OperatorScreen> {
               ),
               const SizedBox(height: 20),
 
+              Consumer<MigrationProvider>(
+                builder: (context, mig, _) {
+                  if (mig.isMigrating) {
+                    return SectionCard(
+                      child: Column(
+                        children: [
+                          const LinearProgressIndicator(),
+                          const SizedBox(height: 12),
+                          Text(mig.status ?? 'Migration en cours...',
+                              style: const TextStyle(fontSize: 13)),
+                        ],
+                      ),
+                    );
+                  }
+                  return const SizedBox.shrink();
+                },
+              ),
+
               Expanded(
                 child: provider.isLoading
                     ? const Center(child: CircularProgressIndicator())
@@ -53,6 +77,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
                             icon: Icons.manage_accounts_outlined,
                             message: 'Aucun opérateur')
                         : SectionCard(
+                            flex: true,
                             child: ListView.separated(
                               itemCount: ops.length,
                               separatorBuilder: (_, _) =>
@@ -74,6 +99,38 @@ class _OperatorScreenState extends State<OperatorScreen> {
       context: context,
       builder: (_) => const _AddOperatorDialog(),
     );
+  }
+
+  Future<void> _handleImport(BuildContext context) async {
+    final migration = context.read<MigrationProvider>();
+    final success = await migration.importMdb(context);
+
+    if (success) {
+      // Recharger toutes les données
+      if (mounted) {
+        context.read<RoomProvider>().load();
+        context.read<GuestProvider>().load();
+        context.read<CardProvider>().load();
+        context.read<OperatorProvider>().load();
+        context.read<RecordProvider>().load();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Migration terminée avec succès !'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } else if (migration.error != null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(migration.error!),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }
 
