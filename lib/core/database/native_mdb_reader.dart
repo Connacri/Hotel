@@ -103,6 +103,17 @@ exit 1
         'path': mdbPath,
       });
       _log('Native x64 MDB access is available.');
+    } on MissingPluginException catch (nativeError) {
+      _log(
+        'Native MDB channel is unavailable, switching to PowerShell fallback. '
+        'error=${nativeError.toString()}',
+      );
+      await _runPowerShell(
+        mode: 'check',
+        mdbPath: mdbPath,
+        nativeErrorMessage: nativeError.toString(),
+      );
+      _log('PowerShell MDB fallback is available.');
     } on PlatformException catch (nativeError) {
       _log(
         'Native x64 MDB access failed, switching to PowerShell fallback. '
@@ -111,7 +122,7 @@ exit 1
       await _runPowerShell(
         mode: 'check',
         mdbPath: mdbPath,
-        nativeError: nativeError,
+        nativeErrorMessage: nativeError.message,
       );
       _log('PowerShell MDB fallback is available.');
     }
@@ -137,6 +148,17 @@ exit 1
           'table': table,
         },
       );
+    } on MissingPluginException catch (nativeError) {
+      _log(
+        'Native MDB channel is unavailable for $table, switching to PowerShell fallback. '
+        'error=${nativeError.toString()}',
+      );
+      return _runPowerShell(
+        mode: 'read',
+        mdbPath: mdbPath,
+        table: table,
+        nativeErrorMessage: nativeError.toString(),
+      );
     } on PlatformException catch (nativeError) {
       _log(
         'Native x64 read failed for $table, switching to PowerShell fallback. '
@@ -146,7 +168,7 @@ exit 1
         mode: 'read',
         mdbPath: mdbPath,
         table: table,
-        nativeError: nativeError,
+        nativeErrorMessage: nativeError.message,
       );
     }
 
@@ -170,7 +192,7 @@ exit 1
     required String mode,
     required String mdbPath,
     String? table,
-    PlatformException? nativeError,
+    String? nativeErrorMessage,
   }) async {
     _log(
       'Starting PowerShell MDB fallback. mode=$mode table=${table ?? '-'} '
@@ -211,8 +233,8 @@ exit 1
         buffer.write('\n$stdout');
       }
 
-      if (nativeError != null && nativeError.message?.isNotEmpty == true) {
-        buffer.write('\n\nErreur ODBC x64:\n${nativeError.message}');
+      if (nativeErrorMessage?.isNotEmpty == true) {
+        buffer.write('\n\nErreur backend natif:\n$nativeErrorMessage');
       }
 
       _log(
