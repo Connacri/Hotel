@@ -311,11 +311,27 @@ exit 1
 
   static String get _powerShellPath {
     final windowsDir = Platform.environment['WINDIR'] ?? r'C:\Windows';
+
+    // Priority 1: PowerShell 64-bit (System32 on x64 Windows)
+    final sys64Path =
+        '$windowsDir\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
+    if (File(sys64Path).existsSync()) {
+      return sys64Path;
+    }
+
+    // Priority 2: PowerShell Core 64-bit
+    final pwsh64 = r'C:\Program Files\PowerShell\7\pwsh.exe';
+    if (File(pwsh64).existsSync()) {
+      return pwsh64;
+    }
+
+    // Fallback: PowerShell 32-bit (SysWOW64)
     final wow64Path =
         '$windowsDir\\SysWOW64\\WindowsPowerShell\\v1.0\\powershell.exe';
     if (File(wow64Path).existsSync()) {
       return wow64Path;
     }
+
     return 'powershell.exe';
   }
 
