@@ -23,6 +23,11 @@ using flutter::EncodableValue;
 
 constexpr auto kChannelName = "hotel/native_mdb_reader";
 
+void LogDebug(const std::wstring& message) {
+  const std::wstring output = L"[MDB Import] " + message + L"\n";
+  OutputDebugStringW(output.c_str());
+}
+
 std::wstring Utf8ToWide(const std::string& value) {
   if (value.empty()) {
     return std::wstring();
@@ -118,6 +123,7 @@ class AccessConnection {
   ~AccessConnection() { Close(); }
 
   void Open(const std::wstring& path) {
+    LogDebug(L"Opening MDB through native ODBC.");
     AllocateHandles();
 
     const std::wstring escaped_path = EscapeConnectionValue(path);
@@ -140,6 +146,7 @@ class AccessConnection {
           SQL_DRIVER_NOPROMPT);
       if (SQL_SUCCEEDED(result)) {
         is_connected_ = true;
+        LogDebug(L"Native ODBC connection established.");
         return;
       }
 
@@ -183,6 +190,7 @@ class AccessConnection {
     };
 
     try {
+      LogDebug(L"Reading table " + Utf8ToWide(table_name) + L" through native ODBC.");
       const std::wstring query =
           L"SELECT * FROM [" + Utf8ToWide(table_name) + L"]";
       const SQLRETURN exec_result = SQLExecDirectW(
@@ -221,6 +229,8 @@ class AccessConnection {
         rows.push_back(std::move(row));
       }
 
+      LogDebug(L"Native ODBC read completed for table " + Utf8ToWide(table_name) +
+               L".");
       cleanup_stmt();
       return rows;
     } catch (...) {
@@ -357,6 +367,7 @@ void RegisterNativeMdbReader(flutter::BinaryMessenger* messenger) {
         }
 
         try {
+          LogDebug(L"Received native MDB method call.");
           AccessConnection connection;
           connection.Open(Utf8ToWide(*path));
 
@@ -379,6 +390,7 @@ void RegisterNativeMdbReader(flutter::BinaryMessenger* messenger) {
 
           result->NotImplemented();
         } catch (const std::exception& exception) {
+          LogDebug(L"Native MDB method call failed.");
           result->Error("mdb_native_error", exception.what());
         }
       });

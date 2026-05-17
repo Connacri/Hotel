@@ -4,6 +4,8 @@ import '../database/local_database.dart';
 import '../database/mdb_migrator.dart';
 
 class MigrationProvider extends ChangeNotifier {
+  static const _logPrefix = '[MDB Import]';
+
   bool _isMigrating = false;
   String? _status;
   String? _error;
@@ -23,6 +25,7 @@ class MigrationProvider extends ChangeNotifier {
       if (result == null || result.files.single.path == null) return false;
 
       final path = result.files.single.path!;
+      _log('Manual import selected file "$path".');
       
       _isMigrating = true;
       _status = "Initialisation de la migration...";
@@ -34,7 +37,7 @@ class MigrationProvider extends ChangeNotifier {
 
       await migrator.migrate(onProgress: (table) {
         _status = "Migration de la table : $table...";
-        print('DEBUG: Migration progress: $table');
+        _log('Progress: migrating table $table.');
         notifyListeners();
       });
 
@@ -42,11 +45,17 @@ class MigrationProvider extends ChangeNotifier {
       _isMigrating = false;
       notifyListeners();
       return true;
-    } catch (e) {
+    } catch (e, st) {
+      _log('Manual import failed: $e');
+      _log(st.toString());
       _error = "Erreur lors de la migration : $e";
       _isMigrating = false;
       notifyListeners();
       return false;
     }
+  }
+
+  void _log(String message) {
+    debugPrint('$_logPrefix $message');
   }
 }

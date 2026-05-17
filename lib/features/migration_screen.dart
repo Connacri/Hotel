@@ -18,6 +18,8 @@ class MigrationScreen extends StatefulWidget {
 }
 
 class _MigrationScreenState extends State<MigrationScreen> {
+  static const _logPrefix = '[MDB Import]';
+
   String _currentTable = 'Initialisation...';
   double _progress = 0;
   bool _isDone = false;
@@ -31,24 +33,29 @@ class _MigrationScreenState extends State<MigrationScreen> {
 
   Future<void> _startMigration() async {
     final migrator = MdbMigrator(db: widget.localDb.db, mdbPath: widget.mdbPath);
+    _log('Auto migration started for "${widget.mdbPath}".');
     try {
       await migrator.migrate(onProgress: (table) {
         setState(() {
           _currentTable = 'Importation de $table...';
           _progress += 0.15; // Approximation
         });
+        _log('Auto migration progress: $table.');
       });
       setState(() {
         _isDone = true;
         _progress = 1.0;
       });
+      _log('Auto migration completed.');
       await Future.delayed(const Duration(seconds: 1));
       if (mounted) {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (_) => const AppShell()),
         );
       }
-    } catch (e) {
+    } catch (e, st) {
+      _log('Auto migration failed: $e');
+      _log(st.toString());
       setState(() => _error = e.toString());
     }
   }
@@ -139,5 +146,9 @@ class _MigrationScreenState extends State<MigrationScreen> {
         ),
       ),
     );
+  }
+
+  void _log(String message) {
+    debugPrint('$_logPrefix $message');
   }
 }

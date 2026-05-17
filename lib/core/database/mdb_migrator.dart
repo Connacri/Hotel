@@ -1,10 +1,15 @@
 import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart';
 
 import 'native_mdb_reader.dart';
 
 class MdbMigrator {
+  static const _logPrefix = '[MDB Import]';
+  static const _maxLoggedRowErrors = 10;
+
   final Database _db;
   final String mdbPath;
 
@@ -26,34 +31,40 @@ class MdbMigrator {
 
       for (final path in candidates) {
         if (File(path).existsSync()) {
-          print('DEBUG: Found mdb-export at: $path');
+          _log('Found mdb-export at: $path');
           return path;
         }
       }
       
-      print('DEBUG: mdb-export.exe NOT FOUND in any expected location.');
-      print('DEBUG: Checked paths: ${candidates.join(', ')}');
+      _log('mdb-export.exe not found in expected locations.');
+      _log('Checked paths: ${candidates.join(', ')}');
       return 'mdb-export'; // Fallback to PATH
     }
     return 'mdb-export';
   }
 
   Future<void> checkRequirements() async {
+    _log('Checking requirements for "$mdbPath".');
+
     if (!File(mdbPath).existsSync()) {
+      _log('MDB file missing at "$mdbPath".');
       throw Exception('Fichier MDB introuvable: $mdbPath');
     }
 
     if (NativeMdbReader.isSupported) {
+      _log('Using Windows native reader.');
       await NativeMdbReader.checkRequirements(mdbPath);
+      _log('Windows native reader is available.');
       return;
     }
 
     try {
+      _log('Using mdb-export fallback.');
       final result = await Process.run(_mdbExport, ['--version'], runInShell: Platform.isWindows);
       if (result.exitCode != 0) {
         throw Exception('mdb-export binaire trouvé mais a retourné une erreur: ${result.stderr}');
       }
-      print('DEBUG: mdb-export requirements check passed.');
+      _log('mdb-export requirements check passed.');
     } catch (e) {
       final checkedPaths = [
         p.join(p.dirname(Platform.resolvedExecutable), 'mdb-export.exe'),
@@ -71,6 +82,7 @@ class MdbMigrator {
 
   Future<void> migrate({void Function(String table)? onProgress}) async {
     await checkRequirements();
+    _log('Starting MDB migration.');
     final tables = [
       _MdbTable(
         name: 'BuildingInfo',
@@ -132,34 +144,52 @@ class MdbMigrator {
     _db.execute(
       "INSERT OR REPLACE INTO migration_status (key,value) VALUES ('mdb_migrated','1')",
     );
+    _log('MDB migration completed successfully.');
   }
 
   Future<void> _migrateTable(_MdbTable table) async {
     final rows = await _readRows(table.name);
     if (rows.isEmpty) {
-      print('DEBUG: No rows found for table ${table.name}');
+      _log('Table ${table.name}: no rows found.');
       return;
     }
 
+    _log('Table ${table.name}: ${rows.length} rows loaded from source.');
     final stmt = _db.prepare(table.sql);
     _db.execute('BEGIN');
     var successCount = 0;
+    var skippedCount = 0;
     try {
-      for (final cols in rows) {
+      for (var index = 0; index < rows.length; index++) {
+        final cols = rows[index];
         try {
           final mappedData = table.mapper(cols);
           stmt.execute(mappedData);
           successCount++;
-        } catch (e) {
-          // Ligne corrompue — on continue
-          // print('DEBUG: Error parsing line $i in ${table.name}: $e');
+        } catch (e, st) {
+          skippedCount++;
+          if (skippedCount <= _maxLoggedRowErrors) {
+            _log(
+              'Table ${table.name}: row ${index + 1} skipped. '
+              'error=$e data=${_truncate(cols.toString(), 400)}',
+            );
+            _log(_truncate(st.toString(), 800));
+          }
         }
       }
       _db.execute('COMMIT');
-      print('DEBUG: Committed $successCount rows for ${table.name}');
-    } catch (e) {
+      _log(
+        'Table ${table.name}: committed $successCount rows, skipped $skippedCount.',
+      );
+      if (skippedCount > _maxLoggedRowErrors) {
+        _log(
+          'Table ${table.name}: ${skippedCount - _maxLoggedRowErrors} additional row errors were suppressed.',
+        );
+      }
+    } catch (e, st) {
       _db.execute('ROLLBACK');
-      print('DEBUG: Rollback for ${table.name}: $e');
+      _log('Table ${table.name}: rollback due to error $e');
+      _log(_truncate(st.toString(), 1200));
       rethrow;
     } finally {
       stmt.dispose();
@@ -168,12 +198,15 @@ class MdbMigrator {
 
   Future<List<List<String?>>> _readRows(String table) async {
     if (NativeMdbReader.isSupported) {
-      print('DEBUG: Reading table $table using native Windows MDB reader');
-      return NativeMdbReader.readTable(mdbPath, table);
+      _log('Reading table $table via Windows native reader.');
+      final rows = await NativeMdbReader.readTable(mdbPath, table);
+      _log('Table $table: native reader returned ${rows.length} rows.');
+      return rows;
     }
 
     final csv = await _export(table);
     if (csv.isEmpty) {
+      _log('Table $table: empty CSV payload from mdb-export.');
       return const [];
     }
 
@@ -190,27 +223,31 @@ class MdbMigrator {
       }
       rows.add(_parseCsv(line));
     }
+    _log('Table $table: parsed ${rows.length} rows from CSV export.');
     return rows;
   }
 
   Future<String> _export(String table) async {
     try {
-      print('DEBUG: Exporting table $table using $_mdbExport');
-    final result = await Process.run(
-      _mdbExport,
-      [mdbPath, table],
-      runInShell: Platform.isWindows,
-    );
-    if (result.exitCode != 0) {
-      final errorMsg = 'Export failed for $table with exit code ${result.exitCode}\nStderr: ${result.stderr}';
-      print('DEBUG: $errorMsg');
-      throw Exception(errorMsg);
-    }
-    final stdout = result.stdout as String;
-      print('DEBUG: Export success for $table, length: ${stdout.length}');
+      _log('Exporting table $table using $_mdbExport.');
+      final result = await Process.run(
+        _mdbExport,
+        [mdbPath, table],
+        runInShell: Platform.isWindows,
+      );
+      if (result.exitCode != 0) {
+        final errorMsg =
+            'Export failed for $table with exit code ${result.exitCode}\n'
+            'Stdout: ${_truncate('${result.stdout}', 600)}\n'
+            'Stderr: ${_truncate('${result.stderr}', 600)}';
+        _log(errorMsg);
+        throw Exception(errorMsg);
+      }
+      final stdout = result.stdout as String;
+      _log('Export success for $table, payload length: ${stdout.length}.');
       return stdout.trim();
     } catch (e) {
-      print('DEBUG: Exception during export of $table: $e');
+      _log('Exception during export of $table: $e');
       return '';
     }
   }
@@ -253,6 +290,17 @@ class MdbMigrator {
   double? _d(String? s) {
     if (s == null || s.isEmpty) return null;
     return double.tryParse(s.replaceAll('"', '').trim());
+  }
+
+  void _log(String message) {
+    debugPrint('$_logPrefix $message');
+  }
+
+  String _truncate(String value, int maxLength) {
+    if (value.length <= maxLength) {
+      return value;
+    }
+    return '${value.substring(0, maxLength)}...';
   }
 }
 

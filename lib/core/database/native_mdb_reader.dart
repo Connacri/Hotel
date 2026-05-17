@@ -1,9 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 class NativeMdbReader {
+  static const _logPrefix = '[MDB Import]';
+
   NativeMdbReader._();
 
   static const MethodChannel _channel =
@@ -95,11 +98,22 @@ exit 1
     }
 
     try {
+      _log('Checking Windows native MDB access for "$mdbPath".');
       await _channel.invokeMethod<void>('checkAccessSupport', {
         'path': mdbPath,
       });
+      _log('Native x64 MDB access is available.');
     } on PlatformException catch (nativeError) {
-      await _runPowerShell(mode: 'check', mdbPath: mdbPath, nativeError: nativeError);
+      _log(
+        'Native x64 MDB access failed, switching to PowerShell fallback. '
+        'error=${nativeError.message}',
+      );
+      await _runPowerShell(
+        mode: 'check',
+        mdbPath: mdbPath,
+        nativeError: nativeError,
+      );
+      _log('PowerShell MDB fallback is available.');
     }
   }
 
@@ -115,6 +129,7 @@ exit 1
 
     List<Object?>? rows;
     try {
+      _log('Reading table $table via native x64 channel.');
       rows = await _channel.invokeMethod<List<Object?>>(
         'readTable',
         {
@@ -123,6 +138,10 @@ exit 1
         },
       );
     } on PlatformException catch (nativeError) {
+      _log(
+        'Native x64 read failed for $table, switching to PowerShell fallback. '
+        'error=${nativeError.message}',
+      );
       return _runPowerShell(
         mode: 'read',
         mdbPath: mdbPath,
@@ -132,16 +151,19 @@ exit 1
     }
 
     if (rows == null) {
+      _log('Table $table: native channel returned null payload.');
       return const [];
     }
 
-    return rows
+    final mappedRows = rows
         .map(
           (row) => (row as List<Object?>)
               .map((value) => value as String?)
               .toList(growable: false),
         )
         .toList(growable: false);
+    _log('Table $table: native channel returned ${mappedRows.length} rows.');
+    return mappedRows;
   }
 
   static Future<List<List<String?>>> _runPowerShell({
@@ -150,6 +172,10 @@ exit 1
     String? table,
     PlatformException? nativeError,
   }) async {
+    _log(
+      'Starting PowerShell MDB fallback. mode=$mode table=${table ?? '-'} '
+      'powershell=$_powerShellPath',
+    );
     final result = await Process.run(
       _powerShellPath,
       [
@@ -177,18 +203,27 @@ exit 1
       );
 
       final stderr = (result.stderr as String).trim();
+      final stdout = (result.stdout as String).trim();
       if (stderr.isNotEmpty) {
         buffer.write('\n$stderr');
+      }
+      if (stderr.isEmpty && stdout.isNotEmpty) {
+        buffer.write('\n$stdout');
       }
 
       if (nativeError != null && nativeError.message?.isNotEmpty == true) {
         buffer.write('\n\nErreur ODBC x64:\n${nativeError.message}');
       }
 
+      _log(
+        'PowerShell fallback failed. exitCode=${result.exitCode} '
+        'stderr=${_truncate(stderr, 800)} stdout=${_truncate(stdout, 800)}',
+      );
       throw Exception(buffer.toString());
     }
 
     if (mode == 'check') {
+      _log('PowerShell fallback check succeeded.');
       return const [];
     }
 
@@ -197,14 +232,26 @@ exit 1
       return const [];
     }
 
-    final decoded = jsonDecode(stdout);
-    final payload = decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
+    dynamic decoded;
+    try {
+      decoded = jsonDecode(stdout);
+    } catch (e) {
+      _log(
+        'PowerShell fallback returned non-JSON output. '
+        'error=$e stdout=${_truncate(stdout, 800)}',
+      );
+      rethrow;
+    }
+
+    final payload =
+        decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
     final rows = payload['rows'];
     if (rows is! List) {
+      _log('PowerShell fallback returned no list payload.');
       return const [];
     }
 
-    return rows
+    final mappedRows = rows
         .map<List<String?>>((row) {
           if (row is! List) {
             return const <String?>[];
@@ -212,6 +259,8 @@ exit 1
           return row.map((value) => value as String?).toList(growable: false);
         })
         .toList(growable: false);
+    _log('Table ${table ?? '-'}: PowerShell fallback returned ${mappedRows.length} rows.');
+    return mappedRows;
   }
 
   static String get _powerShellPath {
@@ -222,5 +271,16 @@ exit 1
       return wow64Path;
     }
     return 'powershell.exe';
+  }
+
+  static void _log(String message) {
+    debugPrint('$_logPrefix $message');
+  }
+
+  static String _truncate(String value, int maxLength) {
+    if (value.length <= maxLength) {
+      return value;
+    }
+    return '${value.substring(0, maxLength)}...';
   }
 }
