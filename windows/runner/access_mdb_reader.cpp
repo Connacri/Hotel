@@ -354,54 +354,73 @@ EncodableList EncodeRows(
 
 }  // namespace
 
+class NativeMdbReader {
+ public:
+  NativeMdbReader(flutter::BinaryMessenger* messenger) {
+    channel_ = std::make_unique<flutter::MethodChannel<EncodableValue>>(
+        messenger, kChannelName, &flutter::StandardMethodCodec::GetInstance());
+
+    channel_->SetMethodCallHandler(
+        [this](const flutter::MethodCall<EncodableValue>& call,
+               std::unique_ptr<flutter::MethodResult<EncodableValue>> result) {
+          HandleMethodCall(call, std::move(result));
+        });
+  }
+
+  ~NativeMdbReader() = default;
+
+ private:
+  void HandleMethodCall(
+      const flutter::MethodCall<EncodableValue>& call,
+      std::unique_ptr<flutter::MethodResult<EncodableValue>> result) {
+    const auto* arguments = std::get_if<EncodableMap>(call.arguments());
+    if (arguments == nullptr) {
+      result->Error("invalid_arguments",
+                    "Les arguments de la migration MDB sont invalides.");
+      return;
+    }
+
+    const std::string* path = GetStringArgument(*arguments, "path");
+    if (path == nullptr || path->empty()) {
+      result->Error("invalid_path", "Le chemin MDB est manquant.");
+      return;
+    }
+
+    try {
+      LogDebug(L"Received native MDB method call: " +
+               Utf8ToWide(call.method_name()));
+      AccessConnection connection;
+      connection.Open(Utf8ToWide(*path));
+
+      if (call.method_name() == "checkAccessSupport") {
+        result->Success();
+        return;
+      }
+
+      if (call.method_name() == "readTable") {
+        const std::string* table = GetStringArgument(*arguments, "table");
+        if (table == nullptr || table->empty()) {
+          result->Error("invalid_table", "Le nom de table MDB est manquant.");
+          return;
+        }
+
+        result->Success(EncodeRows(connection.ReadTable(*table)));
+        return;
+      }
+
+      result->NotImplemented();
+    } catch (const std::exception& exception) {
+      LogDebug(L"Native MDB method call failed: " +
+               Utf8ToWide(exception.what()));
+      result->Error("mdb_native_error", exception.what());
+    }
+  }
+
+  std::unique_ptr<flutter::MethodChannel<EncodableValue>> channel_;
+};
+
+}  // namespace
+
 void RegisterNativeMdbReader(flutter::BinaryMessenger* messenger) {
-  auto channel =
-      std::make_unique<flutter::MethodChannel<EncodableValue>>(
-          messenger, kChannelName,
-          &flutter::StandardMethodCodec::GetInstance());
-
-  channel->SetMethodCallHandler(
-      [](const flutter::MethodCall<EncodableValue>& call,
-         std::unique_ptr<flutter::MethodResult<EncodableValue>> result) {
-        const auto* arguments = std::get_if<EncodableMap>(call.arguments());
-        if (arguments == nullptr) {
-          result->Error("invalid_arguments",
-                        "Les arguments de la migration MDB sont invalides.");
-          return;
-        }
-
-        const std::string* path = GetStringArgument(*arguments, "path");
-        if (path == nullptr || path->empty()) {
-          result->Error("invalid_path", "Le chemin MDB est manquant.");
-          return;
-        }
-
-        try {
-          LogDebug(L"Received native MDB method call.");
-          AccessConnection connection;
-          connection.Open(Utf8ToWide(*path));
-
-          if (call.method_name() == "checkAccessSupport") {
-            result->Success();
-            return;
-          }
-
-          if (call.method_name() == "readTable") {
-            const std::string* table = GetStringArgument(*arguments, "table");
-            if (table == nullptr || table->empty()) {
-              result->Error("invalid_table",
-                            "Le nom de table MDB est manquant.");
-              return;
-            }
-
-            result->Success(EncodeRows(connection.ReadTable(*table)));
-            return;
-          }
-
-          result->NotImplemented();
-        } catch (const std::exception& exception) {
-          LogDebug(L"Native MDB method call failed.");
-          result->Error("mdb_native_error", exception.what());
-        }
-      });
+  static auto* reader = new NativeMdbReader(messenger);
 }

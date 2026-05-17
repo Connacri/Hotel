@@ -67,12 +67,13 @@ foreach ($connectionString in $connectionStrings) {
     $rows = New-Object System.Collections.Generic.List[object]
 
     while ($reader.Read()) {
-      $row = New-Object object[] $reader.FieldCount
+      $row = [object[]]::new($reader.FieldCount)
       for ($i = 0; $i -lt $reader.FieldCount; $i++) {
-        if ($reader.IsDBNull($i)) {
+        $val = $reader.GetValue($i)
+        if ($val -eq [System.DBNull]::Value -or $null -eq $val) {
           $row[$i] = $null
         } else {
-          $row[$i] = [string]$reader.GetValue($i)
+          $row[$i] = [string]$val
         }
       }
       [void]$rows.Add($row)
