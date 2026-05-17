@@ -22,6 +22,10 @@ using flutter::EncodableMap;
 using flutter::EncodableValue;
 
 constexpr auto kChannelName = "hotel/native_mdb_reader";
+const std::vector<std::wstring> kCandidatePasswords = {
+    L"",
+    L"pradlock",
+};
 
 void LogDebug(const std::wstring& message) {
   const std::wstring output = L"[MDB Import] " + message + L"\n";
@@ -127,12 +131,18 @@ class AccessConnection {
     AllocateHandles();
 
     const std::wstring escaped_path = EscapeConnectionValue(path);
-    const std::vector<std::wstring> connection_attempts = {
-        L"Driver={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=" +
-            escaped_path + L";Uid=Admin;Pwd=;ReadOnly=1;",
-        L"Driver={Microsoft Access Driver (*.mdb)};DBQ=" + escaped_path +
-            L";Uid=Admin;Pwd=;ReadOnly=1;",
-    };
+    std::vector<std::wstring> connection_attempts;
+    connection_attempts.reserve(kCandidatePasswords.size() * 2);
+    for (const auto& password : kCandidatePasswords) {
+      const std::wstring escaped_password = EscapeConnectionValue(password);
+      connection_attempts.push_back(
+          L"Driver={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=" +
+          escaped_path + L";Uid=Admin;Pwd=" + escaped_password +
+          L";ReadOnly=1;");
+      connection_attempts.push_back(
+          L"Driver={Microsoft Access Driver (*.mdb)};DBQ=" + escaped_path +
+          L";Uid=Admin;Pwd=" + escaped_password + L";ReadOnly=1;");
+    }
 
     std::vector<std::string> errors;
     for (const auto& connection_string : connection_attempts) {

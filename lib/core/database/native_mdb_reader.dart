@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 class NativeMdbReader {
   static const _logPrefix = '[MDB Import]';
+  static const List<String> _candidatePasswords = ['', 'pradlock'];
 
   NativeMdbReader._();
 
@@ -15,6 +16,7 @@ class NativeMdbReader {
   static const String _powerShellScript = r'''
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$ProgressPreference = 'SilentlyContinue'
 
 function Decode-Utf8Base64([string]$value) {
   if ([string]::IsNullOrEmpty($value)) {
@@ -29,11 +31,22 @@ function Decode-Utf8Base64([string]$value) {
 $path = Decode-Utf8Base64 $env:HOTEL_MDB_PATH_B64
 $table = Decode-Utf8Base64 $env:HOTEL_MDB_TABLE_B64
 $mode = $env:HOTEL_MDB_MODE
+$passwordsJson = Decode-Utf8Base64 $env:HOTEL_MDB_PASSWORDS_B64
+$passwords = if ([string]::IsNullOrEmpty($passwordsJson)) {
+  @('')
+} else {
+  ConvertFrom-Json $passwordsJson
+}
 
-$connectionStrings = @(
-  "Driver={Microsoft Access Driver (*.mdb, *.accdb)};Dbq=$path;Uid=Admin;Pwd=;ReadOnly=1;",
-  "Driver={Microsoft Access Driver (*.mdb)};Dbq=$path;Uid=Admin;Pwd=;ReadOnly=1;"
-)
+$connectionStrings = New-Object System.Collections.Generic.List[string]
+foreach ($password in $passwords) {
+  [void]$connectionStrings.Add(
+    "Driver={Microsoft Access Driver (*.mdb, *.accdb)};Dbq=$path;Uid=Admin;Pwd=$password;ReadOnly=1;"
+  )
+  [void]$connectionStrings.Add(
+    "Driver={Microsoft Access Driver (*.mdb)};Dbq=$path;Uid=Admin;Pwd=$password;ReadOnly=1;"
+  )
+}
 
 $lastErrorText = $null
 
@@ -196,7 +209,7 @@ exit 1
   }) async {
     _log(
       'Starting PowerShell MDB fallback. mode=$mode table=${table ?? '-'} '
-      'powershell=$_powerShellPath',
+      'powershell=$_powerShellPath passwordCandidates=${_candidatePasswords.length}',
     );
     final result = await Process.run(
       _powerShellPath,
@@ -213,6 +226,8 @@ exit 1
         'HOTEL_MDB_MODE': mode,
         'HOTEL_MDB_PATH_B64': base64Encode(utf8.encode(mdbPath)),
         'HOTEL_MDB_TABLE_B64': base64Encode(utf8.encode(table ?? '')),
+        'HOTEL_MDB_PASSWORDS_B64':
+            base64Encode(utf8.encode(jsonEncode(_candidatePasswords))),
       },
       runInShell: false,
       stdoutEncoding: utf8,
@@ -254,9 +269,17 @@ exit 1
       return const [];
     }
 
+    final jsonPayload = stdout
+        .split(RegExp(r'\r?\n'))
+        .map((line) => line.trim())
+        .firstWhere(
+          (line) => line.startsWith('{') || line.startsWith('['),
+          orElse: () => stdout,
+        );
+
     dynamic decoded;
     try {
-      decoded = jsonDecode(stdout);
+      decoded = jsonDecode(jsonPayload);
     } catch (e) {
       _log(
         'PowerShell fallback returned non-JSON output. '
