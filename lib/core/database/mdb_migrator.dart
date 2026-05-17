@@ -2,6 +2,8 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart';
 
+import 'native_mdb_reader.dart';
+
 class MdbMigrator {
   final Database _db;
   final String mdbPath;
@@ -37,6 +39,15 @@ class MdbMigrator {
   }
 
   Future<void> checkRequirements() async {
+    if (!File(mdbPath).existsSync()) {
+      throw Exception('Fichier MDB introuvable: $mdbPath');
+    }
+
+    if (NativeMdbReader.isSupported) {
+      await NativeMdbReader.checkRequirements(mdbPath);
+      return;
+    }
+
     try {
       final result = await Process.run(_mdbExport, ['--version'], runInShell: Platform.isWindows);
       if (result.exitCode != 0) {
@@ -124,27 +135,18 @@ class MdbMigrator {
   }
 
   Future<void> _migrateTable(_MdbTable table) async {
-    final csv = await _export(table.name);
-    if (csv.isEmpty) {
-      print('DEBUG: CSV empty for table ${table.name}');
+    final rows = await _readRows(table.name);
+    if (rows.isEmpty) {
+      print('DEBUG: No rows found for table ${table.name}');
       return;
     }
-
-    final lines = csv.split('\n');
-    print('DEBUG: Table ${table.name} has ${lines.length} lines');
-    if (lines.length < 2) return;
 
     final stmt = _db.prepare(table.sql);
     _db.execute('BEGIN');
     var successCount = 0;
     try {
-      for (var i = 1; i < lines.length; i++) {
-        final line = lines[i].trim();
-        if (line.isEmpty) continue;
+      for (final cols in rows) {
         try {
-          final cols = _parseCsv(line);
-          if (cols.isEmpty) continue;
-          
           final mappedData = table.mapper(cols);
           stmt.execute(mappedData);
           successCount++;
@@ -162,6 +164,33 @@ class MdbMigrator {
     } finally {
       stmt.dispose();
     }
+  }
+
+  Future<List<List<String?>>> _readRows(String table) async {
+    if (NativeMdbReader.isSupported) {
+      print('DEBUG: Reading table $table using native Windows MDB reader');
+      return NativeMdbReader.readTable(mdbPath, table);
+    }
+
+    final csv = await _export(table);
+    if (csv.isEmpty) {
+      return const [];
+    }
+
+    final lines = csv.split('\n');
+    if (lines.length < 2) {
+      return const [];
+    }
+
+    final rows = <List<String?>>[];
+    for (var i = 1; i < lines.length; i++) {
+      final line = lines[i].trim();
+      if (line.isEmpty) {
+        continue;
+      }
+      rows.add(_parseCsv(line));
+    }
+    return rows;
   }
 
   Future<String> _export(String table) async {
@@ -187,8 +216,8 @@ class MdbMigrator {
   }
 
   /// Parse CSV Access (gère guillemets doubles échappés)
-  List<String> _parseCsv(String line) {
-    final result = <String>[];
+  List<String?> _parseCsv(String line) {
+    final result = <String?>[];
     var inQuote = false;
     final current = StringBuffer();
     for (var i = 0; i < line.length; i++) {
@@ -201,14 +230,19 @@ class MdbMigrator {
           inQuote = !inQuote;
         }
       } else if (ch == ',' && !inQuote) {
-        result.add(current.toString().trim());
+        result.add(_normalize(current.toString()));
         current.clear();
       } else {
         current.write(ch);
       }
     }
-    result.add(current.toString().trim());
+    result.add(_normalize(current.toString()));
     return result;
+  }
+
+  String? _normalize(String value) {
+    final normalized = value.trim();
+    return normalized.isEmpty ? null : normalized;
   }
 
   int? _i(String? s) {
@@ -225,7 +259,7 @@ class MdbMigrator {
 class _MdbTable {
   final String name;
   final String sql;
-  final List<Object?> Function(List<String>) mapper;
+  final List<Object?> Function(List<String?>) mapper;
 
   const _MdbTable({
     required this.name,
