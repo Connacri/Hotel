@@ -74,6 +74,12 @@ class _AppShellState extends State<AppShell> {
       selectedIcon: Icon(Icons.history),
       label: Text('Journal'),
     ),
+    // ← ajouter
+    NavigationRailDestination(
+      icon: Icon(Icons.table_view_outlined),
+      selectedIcon: Icon(Icons.table_view),
+      label: Text('MDB Direct'),
+    ),
   ];
 
   static const _pages = [
@@ -82,6 +88,7 @@ class _AppShellState extends State<AppShell> {
     CardScreen(),
     OperatorScreen(),
     RecordScreen(),
+    MdbCrudScreen(),  // ← ajouter
   ];
 
   @override

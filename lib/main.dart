@@ -4,24 +4,29 @@ import 'package:provider/provider.dart';
 import 'package:path/path.dart' as p;
 
 import 'core/database/local_database.dart';
+import 'core/mdb_ffi.dart';
 import 'core/repositories/repositories.dart';
 import 'core/providers/providers.dart';
-import 'core/theme/app_theme.dart';
+import 'core/theme/app_theme.dart'; // ← nouveau
 import 'features/app_shell.dart';
 import 'features/migration_screen.dart';
+import 'providers/mdb_provider.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 1. Initialisation SQLite
+  // 1. Init DLL au démarrage (Windows uniquement)
+  if (Platform.isWindows) MdbFfi.instance.init();  // ← nouveau
+
+  // 2. Initialisation SQLite
   final localDb = await LocalDatabase.getInstance();
 
-  // 2. Détection MDB pour migration potentielle
+  // 3. Détection MDB pour migration potentielle
   final mdbPath = _findMdb();
   localDb.mdbPath = mdbPath;
   final needsMigration = !localDb.isMigrated && mdbPath != null;
 
-  // 3. Repositories
+  // 4. Repositories
   final db         = localDb.db;
   final roomRepo   = RoomRepository(db);
   final guestRepo  = GuestRepository(db);
@@ -38,6 +43,7 @@ Future<void> main() async {
         ChangeNotifierProvider(create: (_) => OperatorProvider(opRepo)..load()),
         ChangeNotifierProvider(create: (_) => RecordProvider(recordRepo)..load()),
         ChangeNotifierProvider(create: (_) => MigrationProvider()),
+        ChangeNotifierProvider(create: (_) => MdbCrudProvider()),  // ← nouveau
       ],
       child: CardLockApp(
         localDb: localDb,
@@ -47,17 +53,12 @@ Future<void> main() async {
   );
 }
 
-/// Cherche CardLock.mdb dans les emplacements standards Windows
 String? _findMdb() {
   if (!Platform.isWindows) return null;
   final candidates = [
     p.join(Directory.current.path, 'CardLock.mdb'),
     p.join(Directory.current.path, 'data', 'CardLock.mdb'),
-    p.join(
-      Platform.environment['APPDATA'] ?? '',
-      'CardLock',
-      'CardLock.mdb',
-    ),
+    p.join(Platform.environment['APPDATA'] ?? '', 'CardLock', 'CardLock.mdb'),
     r'C:\CardLock\CardLock.mdb',
     r'C:\Program Files\CardLock\CardLock.mdb',
     r'C:\Program Files (x86)\CardLock\CardLock.mdb',
@@ -72,11 +73,7 @@ class CardLockApp extends StatelessWidget {
   final LocalDatabase localDb;
   final String? mdbPath;
 
-  const CardLockApp({
-    super.key,
-    required this.localDb,
-    this.mdbPath,
-  });
+  const CardLockApp({super.key, required this.localDb, this.mdbPath});
 
   @override
   Widget build(BuildContext context) {
@@ -88,7 +85,7 @@ class CardLockApp extends StatelessWidget {
       themeMode: ThemeMode.light,
       home: mdbPath != null
           ? MigrationScreen(localDb: localDb, mdbPath: mdbPath!)
-          : const AppShell(),
+          : const AppShell(),   // ← AppShell gère maintenant le toggle
     );
   }
 }

@@ -1,4 +1,4 @@
-#include "access_mdb_reader.h"
+﻿#include "access_mdb_reader.h"
 
 #include <flutter/encodable_value.h>
 #include <flutter/method_channel.h>
@@ -57,6 +57,36 @@ std::string WideToUtf8(const std::wstring& value) {
   WideCharToMultiByte(CP_UTF8, 0, value.c_str(), static_cast<int>(value.size()),
                       utf8.data(), size_needed, nullptr, nullptr);
   return utf8;
+}
+
+// Nettoie une chaîne UTF-8 pour s'assurer qu'elle est valide pour Flutter
+std::string SanitizeUtf8(std::string str) {
+  std::string result;
+  result.reserve(str.size());
+  for (size_t i = 0; i < str.size(); ++i) {
+    unsigned char c = static_cast<unsigned char>(str[i]);
+    if (c == 0) continue; // Skip null characters
+    if (c < 0x80) {
+      result += str[i];
+    } else if ((c & 0xE0) == 0xC0) {
+      if (i + 1 < str.size() && (static_cast<unsigned char>(str[i + 1]) & 0xC0) == 0x80) {
+        result += str[i]; result += str[++i];
+      }
+    } else if ((c & 0xF0) == 0xE0) {
+      if (i + 2 < str.size() && (static_cast<unsigned char>(str[i + 1]) & 0xC0) == 0x80 &&
+          (static_cast<unsigned char>(str[i + 2]) & 0xC0) == 0x80) {
+        result += str[i]; result += str[++i]; result += str[++i];
+      }
+    } else if ((c & 0xF8) == 0xF0) {
+      if (i + 3 < str.size() && (static_cast<unsigned char>(str[i + 1]) & 0xC0) == 0x80 &&
+          (static_cast<unsigned char>(str[i + 2]) & 0xC0) == 0x80 &&
+          (static_cast<unsigned char>(str[i + 3]) & 0xC0) == 0x80) {
+        result += str[i]; result += str[++i]; result += str[++i]; result += str[++i];
+      }
+    }
+    // Les caractères invalides sont simplement ignorés pour éviter de casser le décodeur Dart
+  }
+  return result;
 }
 
 std::wstring EscapeConnectionValue(const std::wstring& value) {
@@ -341,7 +371,7 @@ EncodableList EncodeRows(
     encoded_row.reserve(row.size());
     for (const auto& column : row) {
       if (column.has_value()) {
-        encoded_row.emplace_back(column.value());
+        encoded_row.emplace_back(SanitizeUtf8(column.value()));
       } else {
         encoded_row.emplace_back();
       }
@@ -351,8 +381,6 @@ EncodableList EncodeRows(
 
   return encoded_rows;
 }
-
-}  // namespace
 
 class NativeMdbReader {
  public:
@@ -410,9 +438,10 @@ class NativeMdbReader {
 
       result->NotImplemented();
     } catch (const std::exception& exception) {
+      std::string error_msg = SanitizeUtf8(exception.what());
       LogDebug(L"Native MDB method call failed: " +
-               Utf8ToWide(exception.what()));
-      result->Error("mdb_native_error", exception.what());
+               Utf8ToWide(error_msg));
+      result->Error("mdb_native_error", error_msg);
     }
   }
 

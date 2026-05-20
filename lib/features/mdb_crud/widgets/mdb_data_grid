@@ -1,0 +1,95 @@
+import 'package:flutter/material.dart';
+import '../../../core/mdb/mdb_provider.dart';
+import 'mdb_crud_dialog.dart';
+
+class MdbDataGrid extends StatelessWidget {
+  final MdbCrudProvider prov;
+  const MdbDataGrid({super.key, required this.prov});
+
+  @override
+  Widget build(BuildContext context) {
+    final cols = prov.columns.map((c) => c['name']!).toList();
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(8),
+        child: DataTable(
+          headingRowColor: WidgetStatePropertyAll(
+            Theme.of(context).colorScheme.surfaceContainerHigh,
+          ),
+          dataRowMinHeight: 32,
+          dataRowMaxHeight: 40,
+          columns: [
+            ...cols.map((c) => DataColumn(
+              label: Text(c, style: const TextStyle(fontWeight: FontWeight.bold)),
+            )),
+            const DataColumn(label: Text('Actions')),
+          ],
+          rows: prov.rows.map((row) {
+            return DataRow(cells: [
+              ...cols.map((c) => DataCell(
+                Text(row[c] ?? '', style: const TextStyle(fontSize: 13)),
+              )),
+              DataCell(Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.edit, size: 16),
+                    tooltip: 'Modifier',
+                    onPressed: () => _edit(context, row),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.delete, size: 16,
+                        color: Theme.of(context).colorScheme.error),
+                    tooltip: 'Supprimer',
+                    onPressed: () => _confirmDelete(context, row),
+                  ),
+                ],
+              )),
+            ]);
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  void _edit(BuildContext context, Map<String, String> row) {
+    showDialog(
+      context: context,
+      builder: (_) => MdbCrudDialog(
+        columns: prov.columns,
+        existing: row,
+        pkColumn: prov.pkColumn,
+        onSave: (data) => prov.update(row[prov.pkColumn] ?? '', data),
+        onDelete: () { prov.delete(row[prov.pkColumn] ?? ''); Navigator.pop(context); },
+      ),
+    );
+  }
+
+  void _confirmDelete(BuildContext context, Map<String, String> row) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Confirmer la suppression'),
+        content: Text('Supprimer la ligne "${row[prov.pkColumn]}" ?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            onPressed: () {
+              prov.delete(row[prov.pkColumn] ?? '');
+              Navigator.pop(context);
+            },
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+  }
+}

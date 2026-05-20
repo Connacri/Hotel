@@ -57,6 +57,33 @@ add_subdirectory("runner")
 # them to the application.
 include(flutter/generated_plugins.cmake)
 
+# Generated plugin build rules, which manage building the plugins and adding
+# them to the application.
+include(flutter/generated_plugins.cmake)
+
+# === MDB Bridge DLL ===
+add_library(mdb_bridge SHARED
+        runner/mdb_bridge/mdb_bridge.cpp
+)
+
+target_link_libraries(mdb_bridge PRIVATE odbc32 odbccp32)
+
+# Pas de préfixe "lib" sur Windows
+set_target_properties(mdb_bridge PROPERTIES PREFIX "")
+
+# Copie la DLL dans le même dossier que l'exe à chaque build
+add_custom_command(TARGET mdb_bridge POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy
+        $<TARGET_FILE:mdb_bridge>
+        $<TARGET_FILE_DIR:${BINARY_NAME}>
+)
+
+# Inclure la DLL dans l'installation (distribution)
+install(FILES $<TARGET_FILE:mdb_bridge>
+        DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+        COMPONENT Runtime
+)
+# === Fin MDB Bridge ===
 
 # === Installation ===
 # Support files are copied into place next to the executable, so that it can

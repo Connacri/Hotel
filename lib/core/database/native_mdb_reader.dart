@@ -42,14 +42,12 @@ $passwords = if ([string]::IsNullOrEmpty($passwordsJson)) {
 
 $connectionStrings = New-Object System.Collections.Generic.List[string]
 foreach ($password in $passwords) {
+  $readonly = if ($mode -eq 'execute') { '0' } else { '1' }
   [void]$connectionStrings.Add(
-    "Driver={Microsoft Access Driver (*.mdb, *.accdb)};Dbq=$path;Uid=Admin;Pwd=$password;ReadOnly=1;"
+    "Driver={Microsoft Access Driver (*.mdb, *.accdb)};Dbq=$path;Uid=Admin;Pwd=$password;ReadOnly=$readonly;"
   )
   [void]$connectionStrings.Add(
-    "Driver={Microsoft Access Driver (*.mdb)};Dbq=$path;Uid=Admin;Pwd=$password;ReadOnly=1;"
-  )
-  [void]$connectionStrings.Add(
-    "Driver={Driver do Microsoft Access (*.mdb)};Dbq=$path;Uid=Admin;Pwd=$password;ReadOnly=1;"
+    "Driver={Microsoft Access Driver (*.mdb)};Dbq=$path;Uid=Admin;Pwd=$password;ReadOnly=$readonly;"
   )
 }
 
@@ -200,27 +198,18 @@ exit 1
           'table': table,
         },
       );
-    } on MissingPluginException catch (nativeError) {
+    } catch (e) {
+      // On attrape TOUTES les erreurs (MissingPlugin, PlatformException, FormatException, etc.)
+      // pour garantir un basculement vers PowerShell qui est le plus robuste.
       _log(
-        'Native MDB channel is unavailable for $table, switching to PowerShell fallback. '
-        'error=${nativeError.toString()}',
+        'Native x64 read failed or returned invalid data for $table. '
+        'Switching to PowerShell fallback. error=$e',
       );
       return _runPowerShell(
         mode: 'read',
         mdbPath: mdbPath,
         table: table,
-        nativeErrorMessage: nativeError.toString(),
-      );
-    } on PlatformException catch (nativeError) {
-      _log(
-        'Native x64 read failed for $table, switching to PowerShell fallback. '
-        'error=${nativeError.message}',
-      );
-      return _runPowerShell(
-        mode: 'read',
-        mdbPath: mdbPath,
-        table: table,
-        nativeErrorMessage: nativeError.message,
+        nativeErrorMessage: e.toString(),
       );
     }
 
